@@ -26,10 +26,12 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_db_connection(cls, v: str) -> str:
         if isinstance(v, str):
-            # Render and some cloud providers provide postgres:// URIs
-            # SQLAlchemy 1.4+ strictly requires postgresql://
+            # Render and cloud providers provide postgres:// or postgresql:// URIs
+            # Normalize to postgresql+psycopg:// for explicit, consistent Psycopg 3 driver usage
             if v.startswith("postgres://"):
-                return v.replace("postgres://", "postgresql://", 1)
+                return v.replace("postgres://", "postgresql+psycopg://", 1)
+            elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
+                return v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
     
     # Security & JWT Configuration
