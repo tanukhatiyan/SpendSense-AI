@@ -1,6 +1,10 @@
 // Centralized API client for SpendSense AI
 // Prioritizes VITE_API_BASE_URL, with backward compatibility for VITE_API_URL
-const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '').trim();
+let rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '').trim();
+// If host is passed without protocol (e.g. from Render fromService property: host), prepend https://
+if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
+  rawBaseUrl = `https://${rawBaseUrl}`;
+}
 // Strip trailing slash; in local development default to http://127.0.0.1:8000, in production default to same-origin relative URL
 const API_BASE_URL = rawBaseUrl ? rawBaseUrl.replace(/\/+$/, '') : (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '');
 

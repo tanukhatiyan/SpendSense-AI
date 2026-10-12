@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     
     # CORS Configuration: allow localhost & 127.0.0.1 on Vite ports, plus production domains
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:4173",
     ]
     
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str):
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
                     return json.loads(v_trimmed)
                 except Exception:
                     pass
-            # Comma-separated format support (e.g. "https://app.render.com,https://api.render.com")
+            # Comma-separated format support (e.g. "https://app.render.com,https://api.render.com" or "*")
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
     
