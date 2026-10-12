@@ -14,6 +14,32 @@ const CATEGORIES = [
   'Other',
 ];
 
+const CATEGORY_KEYWORDS = {
+  Transport: ['uber', 'ola', 'cab', 'taxi', 'metro', 'bus', 'train', 'flight', 'airline', 'fuel', 'petrol', 'gas', 'rapido', 'auto', 'parking'],
+  Food: ['grocery', 'food', 'restaurant', 'cafe', 'swiggy', 'zomato', 'dinner', 'lunch', 'breakfast', 'snack', 'coffee', 'tea', 'supermarket', 'blinkit', 'zepto', 'instamart', 'pizza', 'burger'],
+  Salary: ['salary', 'stipend', 'bonus', 'payroll', 'wage', 'dividend', 'freelance'],
+  Housing: ['rent', 'housing', 'maintenance', 'apartment', 'flat', 'mortgage'],
+  Utilities: ['electricity', 'water', 'wifi', 'internet', 'recharge', 'broadband', 'gas bill', 'power bill'],
+  Entertainment: ['netflix', 'spotify', 'movie', 'cinema', 'gaming', 'hotstar', 'prime', 'concert', 'theatre'],
+  Healthcare: ['doctor', 'hospital', 'medicine', 'pharmacy', 'clinic', 'medical', 'dental', 'apollo', '1mg'],
+  Shopping: ['amazon', 'flipkart', 'clothes', 'shopping', 'shoes', 'myntra', 'apparel', 'zara', 'h&m'],
+  Investment: ['investment', 'stock', 'crypto', 'mutual fund', 'sip', 'zerodha', 'groww'],
+};
+
+function inferCategoryFromTitle(titleText) {
+  if (!titleText) return null;
+  const lower = titleText.toLowerCase().trim();
+  const words = lower.split(/[\s-_]+/);
+  for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
+    for (const kw of kws) {
+      if (words.includes(kw) || (kw.length > 3 && lower.includes(kw))) {
+        return cat;
+      }
+    }
+  }
+  return null;
+}
+
 export default function TransactionsTab({
   expenses,
   loading,
@@ -50,6 +76,18 @@ export default function TransactionsTab({
 
   // Deletion State
   const [deletingId, setDeletingId] = useState(null);
+
+  // Auto-infer category on title typing
+  const handleTitleChange = (val) => {
+    setTitle(val);
+    const suggested = inferCategoryFromTitle(val);
+    if (suggested) {
+      setCategory(suggested);
+      if (suggested === 'Salary') {
+        setType('income');
+      }
+    }
+  };
 
   // Handle Create Transaction
   const handleCreate = async (e) => {
@@ -182,7 +220,7 @@ export default function TransactionsTab({
                 className="form-input"
                 placeholder="e.g. Grocery store, Uber, Client payment"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => handleTitleChange(e.target.value)}
               />
             </div>
 

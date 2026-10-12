@@ -73,11 +73,71 @@ def get_expense_by_id(db: Session, expense_id: int, user_id: Optional[int] = Non
         query = query.filter(Expense.user_id.is_(None))
     return query.first()
 
+# Predefined keywords for intelligent transaction categorization
+CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+    "Transport": [
+        "uber", "ola", "cab", "taxi", "metro", "bus", "train", "flight", "airline",
+        "fuel", "petrol", "diesel", "gas", "cng", "auto", "rickshaw", "rapido", "toll", "parking"
+    ],
+    "Food": [
+        "grocery", "food", "restaurant", "cafe", "swiggy", "zomato", "dinner", "lunch",
+        "breakfast", "snack", "coffee", "tea", "supermarket", "bakery", "blinkit", "zepto",
+        "instamart", "pizza", "burger", "mcdonalds", "starbucks", "dominos", "subway"
+    ],
+    "Salary": [
+        "salary", "stipend", "bonus", "payroll", "wage", "freelance", "dividend", "client retainer"
+    ],
+    "Housing": [
+        "rent", "housing", "maintenance", "apartment", "flat", "mortgage", "society fee"
+    ],
+    "Utilities": [
+        "electricity", "water", "wifi", "internet", "recharge", "broadband", "gas bill",
+        "utility", "phone bill", "mobile bill", "power bill", "dth"
+    ],
+    "Entertainment": [
+        "netflix", "spotify", "movie", "cinema", "gaming", "prime video", "hotstar",
+        "youtube", "concert", "theatre", "theater", "steam", "playstation", "xbox"
+    ],
+    "Healthcare": [
+        "doctor", "hospital", "medicine", "pharmacy", "clinic", "medical", "dental",
+        "health", "lab test", "apollo", "1mg", "diagnostics"
+    ],
+    "Shopping": [
+        "amazon", "flipkart", "clothes", "shopping", "shoes", "myntra", "apparel",
+        "electronics", "zara", "h&m", "ajio"
+    ],
+    "Investment": [
+        "investment", "stock", "crypto", "mutual fund", "sip", "zerodha", "groww",
+        "equity", "shares", "coinbase", "binance"
+    ],
+}
+
+def infer_category(title: str, current_category: Optional[str] = None) -> Optional[str]:
+    """Intelligently infer category based on transaction title keywords."""
+    if not title:
+        return current_category
+
+    normalized_title = title.lower().strip()
+    words = set(normalized_title.replace("-", " ").replace("_", " ").split())
+
+    for cat, keywords in CATEGORY_KEYWORDS.items():
+        for kw in keywords:
+            if kw in words or (len(kw) > 3 and kw in normalized_title):
+                return cat
+
+    return current_category
+
 def create_expense(db: Session, expense_in: ExpenseCreate, user_id: Optional[int] = None) -> Expense:
     """Persist a new transaction linked to the authorized user."""
     expense_data = expense_in.model_dump()
     if expense_data.get("date") is None:
         expense_data["date"] = date.today()
+
+    # Smart category inference: if category is default 'Food' or 'Other', refine using title
+    if expense_data.get("category") in ["Food", "Other"] and expense_data.get("title"):
+        inferred = infer_category(expense_data["title"], expense_data["category"])
+        if inferred:
+            expense_data["category"] = inferred
 
     db_expense = Expense(
         title=expense_data["title"],
@@ -105,6 +165,13 @@ def update_expense(
         return None
 
     update_data = expense_in.model_dump(exclude_unset=True)
+    if "title" in update_data and update_data["title"]:
+        current_cat = update_data.get("category") or getattr(db_expense, "category", None)
+        if current_cat in ["Food", "Other"]:
+            inferred = infer_category(update_data["title"], current_cat)
+            if inferred:
+                update_data["category"] = inferred
+
     for field, value in update_data.items():
         if field == "amount" and value is not None:
             value = round(value, 2)

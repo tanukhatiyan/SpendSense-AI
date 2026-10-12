@@ -38,33 +38,89 @@ class MockAIProvider(BaseAIProvider):
         expenses = context.get("total_expenses", 0.0)
         balance = context.get("current_balance", 0.0)
         categories = context.get("category_breakdown", {})
+        merchant_spending = context.get("merchant_spending", {})
+        merchant_categories = context.get("merchant_categories", {})
         budgets = context.get("budgets", [])
 
         # Sort categories by spending descending
         sorted_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)
         top_cat = sorted_cats[0] if sorted_cats else None
 
+        # 1. Specific Merchant / Transaction title inquiry (e.g. "uber", "grocery", "amazon")
+        msg_words = [w for w in msg.replace("?", " ").replace("!", " ").replace(".", " ").replace(",", " ").split() if len(w) > 1]
+        matched_merchants: List[tuple] = []
+        for m_name, m_amt in merchant_spending.items():
+            if m_name in msg:
+                matched_merchants.append((m_name, m_amt))
+            else:
+                for w in msg_words:
+                    if w in ["how", "much", "did", "spend", "spent", "what", "this", "month", "cost", "total", "tell", "about", "show", "many", "have", "money"]:
+                        continue
+                    if w == m_name or w in m_name.split():
+                        matched_merchants.append((m_name, m_amt))
+                        break
+
+        if matched_merchants:
+            total_m_amt = sum(amt for _, amt in matched_merchants)
+            names_str = ", ".join(m.title() for m, _ in matched_merchants)
+            primary_cat = merchant_categories.get(matched_merchants[0][0])
+            cat_note = f" (Category: **{primary_cat}**)" if primary_cat else ""
+            pct_note = f" ({(total_m_amt/expenses*100):.1f}% of monthly expenses)" if expenses > 0 else ""
+            return (
+                f"📊 **Verified Expense Fact:** You have spent **₹{total_m_amt:.2f}** on **{names_str}**{cat_note} in {month_name}{pct_note}."
+            )
+
+        # 2. Specific Category inquiry (e.g. "food", "transport", "shopping", "utilities")
+        ALL_CATEGORIES = [
+            "Food", "Transport", "Shopping", "Salary", "Housing",
+            "Utilities", "Entertainment", "Healthcare", "Investment", "Other"
+        ]
+        matched_category = None
+        for cat in ALL_CATEGORIES:
+            if cat.lower() in msg:
+                matched_category = cat
+                break
+
+        if matched_category:
+            cat_spent = categories.get(matched_category, 0.0)
+            if cat_spent > 0 and expenses > 0:
+                pct = (cat_spent / expenses) * 100
+                return (
+                    f"📊 **Category Spending Fact:** You have spent **₹{cat_spent:.2f}** on **{matched_category}** in {month_name} "
+                    f"({pct:.1f}% of your total monthly spending).\n\n"
+                    f"💡 *Detail:* Recorded under category **{matched_category}**."
+                )
+            else:
+                return (
+                    f"📊 **Category Spending Fact:** You have recorded **₹{cat_spent:.2f}** in **{matched_category}** for {month_name}."
+                )
+
+        # 3. Highest / Top category inquiry
+        if ("category" in msg or "most" in msg or "highest" in msg) and any(w in msg for w in ["spend", "spent", "top"]):
+            if top_cat:
+                return (
+                    f"📊 **Category Breakdown Fact:** Your highest expense category in {month_name} "
+                    f"is **{top_cat[0]}** at **₹{top_cat[1]:.2f}** "
+                    f"({(top_cat[1]/expenses*100):.1f}% of your total spending).\n\n"
+                    f"💡 *Suggestion:* Look into smaller daily purchases in {top_cat[0]} to reduce leakage."
+                )
+            return f"You don't have any logged expenses in {month_name} yet."
+
+        # 4. General spending inquiry
         if any(w in msg for w in ["spend", "spent", "how much", "cost"]):
-            if "category" in msg or "most" in msg:
-                if top_cat:
-                    return (
-                        f"📊 **Category Breakdown Fact:** Your highest expense category in {month_name} "
-                        f"is **{top_cat[0]}** at **₹{top_cat[1]:.2f}** "
-                        f"({(top_cat[1]/expenses*100):.1f}% of your total spending).\n\n"
-                        f"💡 *Suggestion:* Look into smaller daily purchases in {top_cat[0]} to reduce leakage."
-                    )
-                return f"You don't have any logged expenses in {month_name} yet."
             return (
                 f"📊 **Verified Financial Fact:** You have spent a total of **₹{expenses:.2f}** in {month_name}.\n"
                 f"Total income logged: **₹{income:.2f}**.\n"
                 f"Current net balance: **₹{balance:.2f}**."
             )
 
+        # 5. Income inquiry
         if any(w in msg for w in ["income", "earn", "salary"]):
             return (
                 f"💰 **Verified Financial Fact:** Your total income recorded for {month_name} is **₹{income:.2f}**."
             )
 
+        # 6. Balance inquiry
         if any(w in msg for w in ["balance", "left", "net", "remaining"]):
             status_text = "healthy" if balance >= 0 else "in deficit"
             return (
@@ -72,6 +128,7 @@ class MockAIProvider(BaseAIProvider):
                 f"Total Income: ₹{income:.2f} | Total Expenses: ₹{expenses:.2f}."
             )
 
+        # 7. Budget status inquiry
         if any(w in msg for w in ["budget", "limit", "exceed"]):
             if not budgets:
                 return (
@@ -94,6 +151,7 @@ class MockAIProvider(BaseAIProvider):
                 lines.append("\n✅ Great job! All your tracked categories are currently within budget.")
             return "\n".join(lines)
 
+        # 8. Spending advice / reduction inquiry
         if any(w in msg for w in ["reduce", "save", "cut", "habit", "advice", "suggest"]):
             advice = [f"💡 **AI Spending Insights & Recommendations:**"]
             if top_cat:
@@ -114,7 +172,7 @@ class MockAIProvider(BaseAIProvider):
         ]
         if top_cat:
             res.append(f"- **Top Spending Category:** {top_cat[0]} (₹{top_cat[1]:.2f})")
-        res.append("\nYou can ask me specific questions like 'How much did I spend?', 'Am I exceeding my budget?', or 'Where could I reduce spending?'.")
+        res.append("\nYou can ask me specific questions like 'How much did I spend on Uber?', 'How much did I spend on Food?', 'Am I exceeding my budget?', or 'Where could I reduce spending?'.")
         return "\n".join(res)
 
 class GeminiProvider(BaseAIProvider):
@@ -137,13 +195,15 @@ class GeminiProvider(BaseAIProvider):
             f"Total Expenses: ₹{context.get('total_expenses', 0.0):.2f}\n"
             f"Net Balance: ₹{context.get('current_balance', 0.0):.2f}\n"
             f"Category Breakdown: {context.get('category_breakdown', {})}\n"
+            f"Merchant & Transaction Spending: {context.get('merchant_spending', {})}\n"
             f"Budgets: {context.get('budgets', [])}\n"
             f"Recent Transactions: {context.get('recent_transactions', [])}\n\n"
             "Rules:\n"
-            "1. Ground all financial statements in the verified figures above.\n"
-            "2. Never claim you can perform transfers, write code, or execute database operations.\n"
-            "3. Clearly distinguish calculated facts from subjective advice.\n"
-            "4. Keep responses concise, actionable, and formatted in markdown."
+            "1. Ground all financial statements strictly in the verified figures above.\n"
+            "2. When answering about a specific category or merchant (e.g. Uber, Groceries), use the exact numbers from the context above.\n"
+            "3. Never claim you can perform transfers, write code, or execute database operations.\n"
+            "4. Clearly distinguish calculated facts from subjective advice.\n"
+            "5. Keep responses concise, actionable, and formatted in markdown."
         )
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
@@ -185,6 +245,7 @@ class OpenAIProvider(BaseAIProvider):
             f"- Total Expenses: ₹{context.get('total_expenses', 0.0):.2f}\n"
             f"- Net Balance: ₹{context.get('current_balance', 0.0):.2f}\n"
             f"- Category Breakdown: {context.get('category_breakdown', {})}\n"
+            f"- Merchant Spending: {context.get('merchant_spending', {})}\n"
             f"- Budgets: {context.get('budgets', [])}\n\n"
             "Ground your replies strictly on these figures. Do not fabricate numbers."
         )
@@ -224,6 +285,7 @@ class GroqProvider(BaseAIProvider):
             f"- Total Expenses: ₹{context.get('total_expenses', 0.0):.2f}\n"
             f"- Net Balance: ₹{context.get('current_balance', 0.0):.2f}\n"
             f"- Category Breakdown: {context.get('category_breakdown', {})}\n"
+            f"- Merchant Spending: {context.get('merchant_spending', {})}\n"
             f"- Budgets: {context.get('budgets', [])}\n\n"
             "Ground your replies strictly on these figures. Do not fabricate numbers."
         )
@@ -264,6 +326,8 @@ def get_user_financial_context(db: Session, user_id: Optional[int] = None) -> Di
     total_income = Decimal("0.00")
     total_expenses = Decimal("0.00")
     category_breakdown: Dict[str, float] = {}
+    merchant_spending: Dict[str, float] = {}
+    merchant_categories: Dict[str, str] = {}
 
     for r in monthly_records:
         amt = Decimal(str(round(r.amount, 2)))
@@ -273,6 +337,9 @@ def get_user_financial_context(db: Session, user_id: Optional[int] = None) -> Di
             total_expenses += amt
             cat = r.category.strip()
             category_breakdown[cat] = round(category_breakdown.get(cat, 0.0) + float(amt), 2)
+            title_key = r.title.strip().lower()
+            merchant_spending[title_key] = round(merchant_spending.get(title_key, 0.0) + float(amt), 2)
+            merchant_categories[title_key] = cat
 
     budgets_data = get_budgets(db, user_id=user_id, month=current_month, year=current_year)
     formatted_budgets = [
@@ -292,7 +359,7 @@ def get_user_financial_context(db: Session, user_id: Optional[int] = None) -> Di
         recent_query = recent_query.filter(Expense.user_id == user_id)
     else:
         recent_query = recent_query.filter(Expense.user_id.is_(None))
-    recent = recent_query.order_by(Expense.date.desc(), Expense.id.desc()).limit(5).all()
+    recent = recent_query.order_by(Expense.date.desc(), Expense.id.desc()).limit(10).all()
     formatted_recent = [
         {"title": r.title, "amount": r.amount, "type": r.type, "category": r.category, "date": r.date.isoformat()}
         for r in recent
@@ -304,6 +371,8 @@ def get_user_financial_context(db: Session, user_id: Optional[int] = None) -> Di
         "total_expenses": float(total_expenses),
         "current_balance": float(total_income - total_expenses),
         "category_breakdown": category_breakdown,
+        "merchant_spending": merchant_spending,
+        "merchant_categories": merchant_categories,
         "budgets": formatted_budgets,
         "recent_transactions": formatted_recent,
     }
